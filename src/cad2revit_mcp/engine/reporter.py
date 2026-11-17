@@ -55,11 +55,33 @@ def build_report(task_id: str, parsed_summary: Dict[str, Any], ir: IRDocument, s
     for issue in ir.graph.get("issues", []):
         manual.append(f"拓扑复核 {issue['element_id']}（{issue['kind']}）："
                       f"{issue.get('detail', {}).get('reason', '')}")
+    for item in verification.get("checks", {}).get("vertical", []):
+        manual.append(f"竖向复核 {item.get('level') or ''} {item.get('element_id')}"
+                      f"（{item.get('kind')}）：{item.get('reason', '')}")
     if not manual:
         manual.append("无，报告可直接归档")
 
     metrics = verification.get("metrics", {})
     auto_ratio = metrics.get("auto_ratio", 0.0)
+
+    floor_rows = [
+        [floor.get("level") or "未标注",
+         "—" if floor.get("elevation_mm") is None else f'{floor["elevation_mm"]:.0f}',
+         floor.get("source_file") or "",
+         str((floor.get("counts") or {}).get("total", 0)),
+         (floor.get("graph") or {}).get("summary", {}).get("headline", "") or "",
+         ", ".join(c.get("code", "") for c in floor.get("conflicts", [])) or "—"]
+        for floor in ir.floors
+    ]
+    floor_stats_rows = [
+        [floor.get("level") or "未标注",
+         str((floor.get("counts") or {}).get("by_type", {}).get("column", 0)),
+         str((floor.get("counts") or {}).get("by_type", {}).get("wall", 0)),
+         str((floor.get("counts") or {}).get("by_type", {}).get("beam", 0)),
+         str((floor.get("counts") or {}).get("by_type", {}).get("grid", 0)),
+         str(len((floor.get("graph") or {}).get("issues", [])))]
+        for floor in ir.floors
+    ]
 
     graph = ir.graph or {}
     relation_rows = [
@@ -92,7 +114,16 @@ def build_report(task_id: str, parsed_summary: Dict[str, Any], ir: IRDocument, s
         f"文字 {parsed_summary.get('texts', 0)}",
         f"- 体检结论：{'可用' if parsed_summary.get('usable', True) else '不可用'}",
         "",
+        "### 楼层划分",
+        "",
+        _table(["楼层", "标高 (mm)", "来源文件", "构件数", "层内摘要", "冲突"], floor_rows)
+        if floor_rows else "_单一楼层或未识别楼层标题_",
+        "",
         "## 二、构件统计与自动完成比例",
+        "",
+        _table(["楼层", "柱", "墙", "梁", "轴网", "拓扑异常"], floor_stats_rows)
+        if floor_stats_rows else "_无分层数据_",
+        "",
         "",
         _table(["构件", "识别数量", "已建模", "未建模"], by_type_rows),
         "",
