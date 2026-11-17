@@ -1,5 +1,14 @@
 # 变更记录
 
+## 0.2.2 (2026-11-17)
+
+许可证变更：MIT → Apache License 2.0。
+
+- 替换：`LICENSE` 全文改为 Apache-2.0，新增 `NOTICE`（版权归属与第三方依赖许可）
+- 更新：`pyproject.toml` 按 PEP 639 改为 `license = "Apache-2.0"` + `license-files`（随 wheel 打包 LICENSE/NOTICE），移除已弃用的 License classifier
+- 更新：README 的 License 章节说明选择理由（专利授权与商标限制）
+- 影响：已发布的 0.1.0–0.2.1 仍按 MIT 授权；自本版起的新代码与分发按 Apache-2.0
+
 ## 0.2.1 (2026-11-17)
 
 安装可用性修复（由「真实 pip install 后跑不通」暴露）。
