@@ -18,10 +18,9 @@ import json
 import urllib.error
 import urllib.request
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List
 
-from ..errors import AppError, E_EXEC_API, E_EXEC_LOCKED, W_PARTIAL, warning
+from ..errors import E_EXEC_API, E_EXEC_LOCKED, W_PARTIAL, AppError, warning
 
 
 def idempotency_key(element: Dict[str, Any], rule_version: str) -> str:

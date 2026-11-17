@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -18,12 +17,10 @@ from .engine.reporter import build_report
 from .engine.resolver import resolve as apply_decisions
 from .engine.verifier import verify as verify_model
 from .errors import (
-    AppError,
     E_INPUT_FILE,
     E_MAPPING_MISSING,
     W_PARAM_MISSING,
-    W_PARTIAL,
-    response,
+    AppError,
     warning,
 )
 from .models import IRDocument, ParsedDrawing, Segment, TextItem
