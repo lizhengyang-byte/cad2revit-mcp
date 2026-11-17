@@ -16,24 +16,25 @@
 ## 2. 数据流
 
 ```
-DXF/DWG
+DXF/DWG（单文件 / 多文件 / 单文件多层并排）
   │ parser        单位归一(mm)、图元抽取、体检
+  │ regions       平面标题 + 空白带投影 → 区域、楼层、标高（不依赖模板）
   ▼
-ParsedDrawing  ── segments / polylines / blocks / texts / layers / health
-  │ detector      图层正则 + 几何约束 + 就近标注
+ParsedDrawing  ── segments / polylines / blocks / texts / layers / health / regions
+  │ detector      逐区域切片 → 图层正则 + 几何约束 + 就近标注
   ▼
-IR (schema 1.1) ── elements[] + ambiguous[] + graph[]
+IR (schema 1.2) ── elements[] + floors[] + ambiguous[] + graph[]（层内 + 跨层）
   │ graph         轴网交点、柱锚点、墙共线、梁支座、重叠 → 拓扑异常并入 ambiguous
   │ resolver      人工/模型裁决
   ▼
 IR'
-  │ planner       族类型与标高映射、批次切分、指令哈希、关系随行
+  │ planner       族类型与标高映射、按层批次切分、指令哈希、关系随行
   ▼
 plan.json       ── batches[{instruction_hash, instructions[]}]
   │ executor      本地模拟 或 Revit HTTP 桥接；幂等去重
   ▼
 run/created.json + SQLite runs/created_keys
-  │ verifier      漏识别、错位、参数缺失、重复、拓扑
+  │ verifier      漏识别、错位、参数缺失、重复、拓扑、竖向对齐
   ▼
 check.json
   │ reporter
@@ -41,26 +42,35 @@ check.json
 report.md
 ```
 
-每个阶段都把产物落盘到 `workspace/tasks/<task_id>/`，任何一步都能单独重跑，不必从头走。链路每一跳的输入输出、协议、单位换算与失败码见 [`conversion-pipeline.md`](conversion-pipeline.md)；模型侧图关系约定见 [`graph-model.md`](graph-model.md)。本文讲「为什么这样分层」，那两篇讲「每一跳的数据长什么样」。
+每个阶段都把产物落盘到 `workspace/tasks/<task_id>/`，任何一步都能单独重跑，不必从头走。链路每一跳的输入输出、协议、单位换算与失败码见 [`conversion-pipeline.md`](conversion-pipeline.md)；模型侧图关系约定见 [`graph-model.md`](graph-model.md)；多楼层切分口径见 [`multi-storey.md`](multi-storey.md)。本文讲「为什么这样分层」，那几篇讲「每一跳的数据长什么样」。
 
 ## 3. 模块职责
 
 | 模块 | 职责 | 不做 |
 | --- | --- | --- |
 | `engine/parser` | 读图、单位换算、图元归一、体检 | 不判断构件语义 |
+| `engine/regions` | 按标题与空白带切分平面、归一楼层名、解析标高、回切区域 | 不按图框切、不猜楼层 |
 | `engine/detector` | 图层匹配、几何规则、文字证据、置信度 | 不建模型、不改参数 |
-| `engine/graph` | 由构件建关系图：轴网交点、柱锚点、墙共线、梁支座、重叠 | 不修改构件几何、不裁决 |
+| `engine/graph` | 由构件建关系图：轴网交点、柱锚点、墙共线、梁支座、重叠、层间柱对位 | 不修改构件几何、不裁决 |
 | `engine/resolver` | 应用裁决、更新 IR、记录冲突 | 不扩散到未点名构件 |
-| `engine/planner` | 指令生成、映射校验、批次与哈希、随行附带图关系 | 不访问 Revit |
+| `engine/planner` | 指令生成、按层解析标高与建层指令、批次按层分组、随行附带图关系 | 不访问 Revit、不跨层混批 |
 | `engine/executor` | 批次执行、幂等、快照、结果记录 | 不读图、不推断 |
-| `engine/verifier` | 模型与原图/IR 比对（含拓扑） | 不自动修复 |
-| `engine/reporter` | 六段式报告（含图关系与拓扑） | 不做评价性结论 |
+| `engine/verifier` | 模型与原图/IR 比对（含拓扑与竖向对齐） | 不自动修复 |
+| `engine/reporter` | 六段式报告（含楼层划分、图关系与拓扑） | 不做评价性结论 |
 | `pipeline` | 串起八步、落盘、状态流转、图查询 | 不承载业务规则 |
 | `server` | MCP 工具封装、错误转统一返回体 | 不含业务逻辑 |
+
+## 3.0 为什么切分必须在识别之前
+
+先切分再识别，是因为识别规则的几何阈值以「一张平面的尺度」为前提。轴网长度比例、柱网间距、墙厚与梁长的合理性，都相对平面尺寸成立；把四层并排的总图当一张平面，所有阈值都会被整体包围盒带偏。切分产出「区域 + 楼层 + 标高」，后续每一层都在自己的坐标与尺度里独立识别，既不会把邻层构件算进来，也不会因为整图尺寸而误判轴网。
+
+切分只依赖标题与空白带，不依赖图框、图层名或块名，是因为这三样在真实施工图里最不可靠：图框可能缺失或被套用，图层名可能被改，块可能被炸开。标题与空白带是图纸本身的排版事实。
 
 ## 3.1 为什么构件图要单独成层
 
 识别层只回答「这是什么构件」，回答不了「它和谁有关系」。模型要判断一根梁该不该建、建在哪一层，必须看到支座与轴网锚点；执行层要判断一批事务会不会撞车，也必须看到重叠关系。把这些塞进 detector 会让识别规则与拓扑规则互相污染：识别错了会带出假关系，关系错了会反过来改识别结果。因此单独一层，只读构件、只产关系、不改构件。
+
+层内与层间也分开：层内关系在每层自己的图里闭合（`id_prefix` 隔开命名空间），跨层只保留 `column_stacks_on` / `grid_continues` 两类显式事实，避免「1F 的梁搭在 2F 的柱上」这类伪关系。
 
 ## 4. 置信度模型
 
@@ -89,7 +99,8 @@ confidence = 0.5 * layer_hit + 0.3 * geometry_ok + 0.2 * text_hit - 0.25 * confl
 - 幂等键持久化在 `created_keys` 表；`resume=true` 时已存在的键直接跳过；
 - 同批内任一构件失败按整批回滚（Revit 侧 Transaction 保证）；
 - 执行前写 `run/snapshot.json`；本项目不提供删除操作，「回退」指撤销本次新增，不是删除历史构件；
-- `batch_size` 默认 80，限制单事务体量，避免大图纸一次提交卡死 Revit。
+- `batch_size` 默认 80，限制单事务体量，避免大图纸一次提交卡死 Revit；多楼层任务中批次再按楼层分组，一层可以多批，一批绝不混层，失败不会连带邻层。
+- 每层若缺标高大，planner 先发 `create_level` 指令（`element_id = LEVEL:<level>`），与构件同批事务提交；Revit 侧不存在同名标高时报 `E-3002`，不再「取最接近标高」静默落到错层。
 
 ## 7. 安全边界
 
@@ -104,5 +115,7 @@ confidence = 0.5 * layer_hit + 0.3 * geometry_ok + 0.2 * text_hit - 0.25 * confl
 2. 墙按「平行双线」识别，单线墙、厚度标注墙无法识别。
 3. 梁按端点邻近判定支座，未做连续梁/次梁传力分析；连续梁仍按整段建模。
 4. 单位缺省按毫米处理，米制图纸会整体放大 1000 倍，体检给 `unit_unknown` 提示。
-5. Revit 侧参考实现只覆盖矩形柱、基本墙、矩形梁与轴网四类。
-6. 图关系仅覆盖结构四类构件的水平投影关系，不含洞口、板、节点详图与竖向传力路径。
+5. Revit 侧参考实现只覆盖矩形柱、基本墙、矩形梁、轴网与标高五类。
+6. 图关系覆盖结构四类构件的水平投影关系与柱的竖向对位，不含洞口、板、节点详图与真实传力路径。
+7. 楼层识别依赖标题或空白带；标题写错、两层同名、层内标高缺失时只报冲突，要求人工裁决，不自动推断。
+8. 多楼层任务要求各层平面使用同一套局部坐标系口径；图纸本身旋转、镜像或比例不一致时，竖向对位会报 `column_misaligned`，需先校正图纸。
