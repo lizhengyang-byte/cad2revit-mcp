@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>Cad2RevitBridge</AssemblyName>
+    <RootNamespace>Cad2RevitBridge</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 改为本机 Revit 安装目录，例如 2022 版本 -->
+    <Reference Include="RevitAPI">
+      <HintPath>C:\Program Files\Autodesk\Revit 2022\RevitAPI.dll</HintPath>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>C:\Program Files\Autodesk\Revit 2022\RevitAPIUI.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
