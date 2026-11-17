@@ -85,7 +85,7 @@ def test_two_files_one_floor_each(tmp_path):
 
 def test_misaligned_columns_are_reported_not_silently_built(tmp_path):
     pipeline = _pipeline(tmp_path)
-    parsed = pipeline.parse(str(_two_floor_with_shift(tmp_path, shift=(400.0, 0.0)))
+    parsed = pipeline.parse(str(_two_floor_with_shift(tmp_path, shift=(400.0, 0.0))))
     detected = pipeline.detect(parsed["task_id"])
     kinds = {(issue["kind"], issue["element_id"]) for issue in detected["graph"]["issues"]}
     assert any(kind == "column_misaligned" for kind, _ in kinds), "上下层柱网错位必须被报出"
