@@ -1,5 +1,16 @@
 # 变更记录
 
+## 0.2.1 (2026-11-17)
+
+安装可用性修复（由「真实 pip install 后跑不通」暴露）。
+
+- 修复：`mcp>=1.0` 未设上限，pip 会装到 2.x，而 2.x 已把 FastMCP 改名为 MCPServer，服务启动即 `ModuleNotFoundError`；依赖改为 `mcp>=1.0,<2`
+- 修复：`--selftest` 依赖 `scripts.make_sample_dxf`，非仓库目录安装后必然失败；示例生成器移入 `cad2revit_mcp.samples`，`scripts/` 仅保留 CLI 包装
+- 修复：规则文件只存在于仓库根 `rules/`，非 editable 安装读不到；规则随包分发（`src/cad2revit_mcp/rules/`），加载时包内优先、仓库兜底，并加用例防止两份副本漂移
+- 修复：`__version__` 写死为 0.1.0，包版本与命令输出长期不一致；改为读安装元数据
+- 新增：`tests/test_packaging.py`（规则打包、副本一致、示例生成器可导入）
+- 验证：`pip install -e .` 后 `--tools` 列出 8 个工具，stdio 握手 `initialize` 成功，`tools/call parse_dwg` 返回 ok
+
 ## 0.2.0 (2026-11-17)
 
 构件图层与转换链路规格。
