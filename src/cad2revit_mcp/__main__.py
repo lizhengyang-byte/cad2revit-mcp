@@ -13,7 +13,7 @@ from .server import list_tool_names, run_stdio
 
 
 def _selftest(config: Config) -> int:
-    from scripts.make_sample_dxf import build_sample
+    from .samples import build_sample
 
     sample = config.workspace_dir / "selftest.dxf"
     build_sample(sample)

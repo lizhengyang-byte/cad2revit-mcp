@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
 
 from cad2revit_mcp.config import Config  # noqa: E402
 from cad2revit_mcp.pipeline import Pipeline  # noqa: E402
-from scripts.make_sample_dxf import build_sample  # noqa: E402
+from cad2revit_mcp.samples import build_sample  # noqa: E402
 
 
 @pytest.fixture()
