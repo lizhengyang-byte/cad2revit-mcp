@@ -93,7 +93,8 @@ def _grid_lines(elements: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return lines
 
 
-def _intersections(grid_lines: List[Dict[str, Any]], tol: float) -> List[Dict[str, Any]]:
+def _intersections(grid_lines: List[Dict[str, Any]], tol: float,
+                   id_prefix: str = "") -> List[Dict[str, Any]]:
     result = []
     index = 0
     for i, first in enumerate(grid_lines):
@@ -104,7 +105,7 @@ def _intersections(grid_lines: List[Dict[str, Any]], tol: float) -> List[Dict[st
                 continue
             index += 1
             result.append({
-                "id": f"GI-{index:03d}",
+                "id": f"{id_prefix}GI-{index:03d}",
                 "x": round(point[0], 1),
                 "y": round(point[1], 1),
                 "grid_lines": [first["id"], second["id"]],
@@ -160,12 +161,12 @@ def _segment_of(element: Dict[str, Any]) -> Optional[Tuple[Point, Point]]:
 # graph construction
 # --------------------------------------------------------------------------
 def build_graph(elements: List[Dict[str, Any]], rules: Optional[Dict[str, Any]] = None,
-                issues_as_ambiguities: bool = True) -> Dict[str, Any]:
+                issues_as_ambiguities: bool = True, id_prefix: str = "") -> Dict[str, Any]:
     """Build the element graph plus the topological issues it exposes."""
     config = {**DEFAULT_GRAPH_RULES, **(rules or {})}
     by_id = {element["id"]: element for element in elements}
     grid_lines = _grid_lines(elements)
-    intersections = _intersections(grid_lines, config["overlap_tolerance_mm"])
+    intersections = _intersections(grid_lines, config["overlap_tolerance_mm"], id_prefix)
 
     nodes = [{
         "id": element["id"],
@@ -192,7 +193,7 @@ def build_graph(elements: List[Dict[str, Any]], rules: Optional[Dict[str, Any]] 
     def add_edge(source: str, relation: str, target: str, weight: float,
                  unit: str, evidence: Dict[str, Any]) -> None:
         edges.append({
-            "id": f"R-{len(edges) + 1:04d}",
+            "id": f"{id_prefix}R-{len(edges) + 1:04d}",
             "type": relation,
             "source": source,
             "target": target,
@@ -201,7 +202,7 @@ def build_graph(elements: List[Dict[str, Any]], rules: Optional[Dict[str, Any]] 
             "evidence": evidence,
         })
 
-    # ---- axis network topology: which axes form a crossing ----------------
+    # ---- axis network topology: which axes form a crossing --------------
     for item in intersections:
         for grid_id in item["grid_lines"]:
             add_edge(item["id"], "grid_line_at_intersection", grid_id, 0.0, "none",
@@ -415,6 +416,149 @@ def build_graph(elements: List[Dict[str, Any]], rules: Optional[Dict[str, Any]] 
             for issue in issues
         ] if issues_as_ambiguities else [],
     }
+
+
+CROSS_FLOOR_REL_TYPES = ("column_stacks_on", "grid_continues")
+CROSS_FLOOR_ISSUE_KINDS = ("column_misaligned", "level_gap_unverified")
+
+
+def merge_graphs(floors: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Combine per-storey graphs into one graph the model can read at once.
+
+    Edges never cross storeys on their own - plans are drawn in their own
+    local coordinates, so a naive merge would invent relations between a
+    column on 1F and an unrelated column on 3F sitting at the same local
+    coordinate.  Cross-storey facts are added explicitly by
+    :func:`cross_floor_analysis`.
+    """
+    nodes: List[Dict[str, Any]] = []
+    edges: List[Dict[str, Any]] = []
+    issues: List[Dict[str, Any]] = []
+    intersections: List[Dict[str, Any]] = []
+    lines: List[str] = []
+    by_level: Dict[str, int] = {}
+    for floor in floors:
+        graph = floor.get("graph") or {}
+        for node in graph.get("nodes", []):
+            node = dict(node)
+            node["level"] = node.get("level") or floor.get("level")
+            nodes.append(node)
+        edges.extend(graph.get("edges", []))
+        issues.extend(graph.get("issues", []))
+        intersections.extend(graph.get("grid_intersections", []))
+        summary = graph.get("summary") or {}
+        headline = summary.get("headline", "")
+        if len(floors) == 1:
+            # one storey: keep the original per-element lines (prompt context)
+            lines.extend(summary.get("lines", []))
+        elif headline:
+            lines.append(f"[{floor.get('level') or '未标注'}] {headline}")
+        level = str(floor.get("level") or "unassigned")
+        by_level[level] = by_level.get(level, 0) + len(
+            [node for node in graph.get("nodes", [])
+             if node.get("type") != "grid_intersection"])
+
+    headline_parts = [f"{len(floors)} 层", f"{len(nodes)} 个构件", f"{len(edges)} 条层内关系"]
+    if issues:
+        headline_parts.append(f"{len(issues)} 个拓扑异常")
+    return {
+        "schema": GRAPH_SCHEMA,
+        "nodes": nodes,
+        "edges": edges,
+        "grid_intersections": intersections,
+        "issues": issues,
+        "metrics": {
+            "nodes": len(nodes),
+            "edges": len(edges),
+            "grid_intersections": len(intersections),
+            "isolated": sum(1 for issue in issues if issue["kind"] == "isolated_element"),
+            "issues": len(issues),
+            "floors": len(floors),
+            "by_relation": {rel: sum(1 for edge in edges if edge["type"] == rel)
+                            for rel in REL_TYPES + CROSS_FLOOR_REL_TYPES},
+            "by_level": by_level,
+        },
+        "summary": {
+            "headline": (floors[0].get("graph") or {}).get("summary", {}).get("headline", "")
+                      if len(floors) == 1 else "，".join(headline_parts),
+            "lines": lines,
+            "intersections": [f"{item['id']} ({item['x']}, {item['y']})"
+                              for item in intersections],
+            "issue_lines": [f"[{issue.get('level')}] {issue['kind']}: {issue['element_id']} - "
+                            f"{issue['detail'].get('reason', '')}" for issue in issues],
+        },
+        "ambiguities": [
+            {"element_id": issue["element_id"], "kind": issue["kind"],
+             "detail": issue["detail"], "level": issue.get("level")}
+            for issue in issues
+        ],
+    }
+
+
+def cross_floor_analysis(floors: List[Dict[str, Any]],
+                         tolerance_mm: float = 100.0) -> Dict[str, Any]:
+    """Vertical consistency between consecutive storeys.
+
+    A column that exists on 1F but not above it, or a column whose centre
+    drifts sideways between storeys, is a load-path problem the drawing alone
+    cannot prove is wrong - so it is reported, never silently accepted.
+    """
+    edges: List[Dict[str, Any]] = []
+    issues: List[Dict[str, Any]] = []
+    ordered = sorted(floors, key=lambda f: (f.get("elevation_mm") is None,
+                                           f.get("elevation_mm") or 0.0))
+    for lower, upper in zip(ordered, ordered[1:]):
+        lower_columns = [element for element in lower.get("elements", [])
+                         if element["type"] == "column"]
+        upper_columns = [element for element in upper.get("elements", [])
+                         if element["type"] == "column"]
+        if not lower_columns or not upper_columns:
+            issues.append({
+                "kind": "level_gap_unverified",
+                "element_id": f"{lower.get('level')}->{upper.get('level')}",
+                "level": upper.get("level"),
+                "detail": {"reason": "上下层缺少可比对的柱网，竖向关系未验证",
+                          "lower": lower.get("level"), "upper": upper.get("level")},
+            })
+            continue
+        for column in lower_columns:
+            point = _point_of(column)
+            if point is None:
+                continue
+            best, best_distance = None, float("inf")
+            for candidate in upper_columns:
+                other = _point_of(candidate)
+                if other is None:
+                    continue
+                distance_value = distance(point, other)
+                if distance_value < best_distance:
+                    best, best_distance = candidate, distance_value
+            if best is None:
+                continue
+            if best_distance <= tolerance_mm:
+                edges.append({
+                    "id": f"V-{len(edges) + 1:04d}",
+                    "type": "column_stacks_on",
+                    "source": column["id"],
+                    "target": best["id"],
+                    "weight": round(best_distance, 1),
+                    "unit": "mm",
+                    "evidence": {"lower": lower.get("level"), "upper": upper.get("level"),
+                                 "tolerance_mm": tolerance_mm},
+                })
+            else:
+                issues.append({
+                    "kind": "column_misaligned",
+                    "element_id": column["id"],
+                    "level": lower.get("level"),
+                    "detail": {
+                        "reason": f"上下层柱中心偏差 {best_distance:.0f} mm，超过 {tolerance_mm:.0f} mm",
+                        "upper_element": best["id"], "upper_level": upper.get("level"),
+                        "offset_mm": round(best_distance, 1),
+                        "tolerance_mm": tolerance_mm,
+                    },
+                })
+    return {"edges": edges, "issues": issues}
 
 
 def _same_type_overlap(first: Dict[str, Any], second: Dict[str, Any],
