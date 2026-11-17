@@ -17,7 +17,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: GIS",
 ]
 dependencies = [
-  "mcp>=1.0,<2",
+  "mcp>=1.0,<2",  # 2.x renamed FastMCP to MCPServer; this code targets the 1.x API
   "ezdxf>=1.0",
   "shapely>=2.0",
 ]
@@ -34,12 +34,16 @@ Homepage = "https://github.com/lizhengyang-byte/cad2revit-mcp"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-cad2revit_mcp = ["rules/*.json"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+ignore = ["E501"]
+
+[tool.setuptools.package-data]
+cad2revit_mcp = ["rules/*.json"]
