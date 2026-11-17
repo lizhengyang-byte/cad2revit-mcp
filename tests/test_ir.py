@@ -12,3 +12,13 @@ def test_ir_roundtrip_keeps_schema():
     assert restored.elements[0].confidence == 0.95
     assert restored.elements[0].source_entities == ["P00001"]
     assert restored.ambiguous == ["C-001"]
+
+
+def test_ir_carries_element_graph():
+    graph = {"schema": "element-graph/1.0", "nodes": [{"id": "C-001"}],
+             "edges": [], "issues": []}
+    ir = IRDocument(task_id="t-2", sheet={}, elements=[], graph=graph)
+    payload = ir.to_dict()
+    assert payload["graph"]["schema"] == "element-graph/1.0"
+    assert IRDocument.from_dict(payload).graph["nodes"][0]["id"] == "C-001"
+    assert payload["schema_version"] == "1.1"

@@ -34,6 +34,9 @@ namespace Cad2RevitBridge
         public string ElementId { get; set; }
         public bool Ok { get; set; }
         public string RevitId { get; set; }
+        /// <summary>Actual placement in millimetres (X, Y, Z), read back from Revit.</summary>
+        public double[] Position { get; set; }
+        public string Level { get; set; }
         public string Code { get; set; }
         public string Message { get; set; }
     }
