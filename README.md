@@ -2,7 +2,7 @@
 
 把二维结构 CAD 图纸转换成 Revit 三维模型的 MCP 工具。定位是**让大语言模型通过 MCP 做「二维翻三维」的翻模**：模型负责看图、判断和处置疑点，工具负责确定性的几何处理、规则识别与建模执行。
 
-> 现状：`0.2.1`。新增构件图关系层（`query_graph`）与转换链路规格；识别与执行链路可端到端跑通，执行层以「本地模拟 + Revit 参考 Add-in」两种形态提供，**尚未在真实 Revit 项目上完成验收**。请勿直接用于交付级生产。
+> 现状：`0.2.2`。构件图关系层（`query_graph`）与转换链路规格已完成；识别与执行链路可端到端跑通，执行层以「本地模拟 + Revit 参考 Add-in」两种形态提供，**尚未在真实 Revit 项目上完成验收**。请勿直接用于交付级生产。
 
 ## 它解决什么问题
 
@@ -40,7 +40,7 @@ pip install -e .
 安装后验证：
 
 ```bash
-cad2revit-mcp --version          # 0.2.1
+cad2revit-mcp --version          # 0.2.2
 cad2revit-mcp --tools            # 列出八个工具
 cad2revit-mcp --selftest --workspace ./workspace
 ```
@@ -205,14 +205,14 @@ ruff check src tests
 ## 路线图
 
 - `0.1`：结构四类构件、DXF、规则识别、本地模拟执行、报告
-- `0.2`（当前）：构件图与拓扑校验、IR 1.1、`query_graph`、转换链路规格、安全与幂等修复、安装可用性修复
+- `0.2`（当前）：构件图与拓扑校验、IR 1.1、`query_graph`、转换链路规格、安全与幂等修复、安装可用性修复、Apache-2.0 许可
 - `0.3`：Revit Add-in 实测与族模板校验、DWG 转换链路、圆弧/斜向轴网
 - `0.4`：OCR 标注、梁跨与竖向传力关系、批量图纸队列
 - 之后：建筑与机电专业、模型 diff
 
 ## 贡献
 
-见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。提交前请确保 `pytest` 与 `ruff` 全绿，并说明规则改动对置信度与图关系的影响；改动了 `rules/structure_default.json` 时需同步包内副本。
+见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。提交前请确保 `pytest` 与 `ruff` 全绿，并说明规则改动对置信度与图关系的影响；改动了 `rules/structure_default.json` 时需同步包内副本。贡献默认按 Apache-2.0 授权（第 5 条）。
 
 ## 免责声明
 
@@ -220,4 +220,6 @@ ruff check src tests
 
 ## License
 
-MIT，见 [`LICENSE`](LICENSE)。
+[Apache License 2.0](LICENSE)，署名与第三方依赖许可见 [`NOTICE`](NOTICE)。
+
+选择 Apache-2.0 而不是 MIT，主要为了**明确的专利授权**（第 3 条）与**商标使用限制**（第 6 条）：这类涉及 CAD 解析与 Revit API 桥接的工具，贡献者可能来自设计院或软件厂商，把专利与商标边界写清楚比单纯「宽松」更有价值。0.2.1 及之前的版本仍按 MIT 授权。
