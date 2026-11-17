@@ -7,8 +7,9 @@
 | 结果可解释 | 每个构件带 `evidence` 与 `confidence`，疑点单独列出 |
 | 结果可复现 | 识别规则与执行指令都是确定性的，同样输入 → 同样输出 |
 | 出错可回退 | 批次事务、执行前快照、只写不删 |
-| 重复执行安全 | 幂等键 `sha256(element_id + geometry + rule_version)` |
+| 重复执行安全 | 幂等键 `sha256(element_id + geometry + rule_version)`，几何先归一化 |
 | 职责清晰 | 模型判断语义，代码负责几何与执行 |
+| 关系可见 | 构件图独立成层，模型读图关系而不是读扁平清单 |
 
 明确不追求：全自动、覆盖多专业、端到端无人值守。
 
@@ -21,17 +22,18 @@ DXF/DWG
 ParsedDrawing  ── segments / polylines / blocks / texts / layers / health
   │ detector      图层正则 + 几何约束 + 就近标注
   ▼
-IR (schema 1.0) ── elements[] + ambiguous[]
+IR (schema 1.1) ── elements[] + ambiguous[] + graph[]
+  │ graph         轴网交点、柱锚点、墙共线、梁支座、重叠 → 拓扑异常并入 ambiguous
   │ resolver      人工/模型裁决
   ▼
-IR' 
-  │ planner       族类型与标高映射、批次切分、指令哈希
+IR'
+  │ planner       族类型与标高映射、批次切分、指令哈希、关系随行
   ▼
 plan.json       ── batches[{instruction_hash, instructions[]}]
   │ executor      本地模拟 或 Revit HTTP 桥接；幂等去重
   ▼
 run/created.json + SQLite runs/created_keys
-  │ verifier      漏识别、错位、参数缺失、重复
+  │ verifier      漏识别、错位、参数缺失、重复、拓扑
   ▼
 check.json
   │ reporter
@@ -39,7 +41,7 @@ check.json
 report.md
 ```
 
-每个阶段都把产物落盘到 `workspace/tasks/<task_id>/`，因此任何一步都可以单独重跑，不需要从头走。
+每个阶段都把产物落盘到 `workspace/tasks/<task_id>/`，任何一步都能单独重跑，不必从头走。链路每一跳的输入输出、协议、单位换算与失败码见 [`conversion-pipeline.md`](conversion-pipeline.md)；模型侧图关系约定见 [`graph-model.md`](graph-model.md)。本文讲「为什么这样分层」，那两篇讲「每一跳的数据长什么样」。
 
 ## 3. 模块职责
 
@@ -47,13 +49,18 @@ report.md
 | --- | --- | --- |
 | `engine/parser` | 读图、单位换算、图元归一、体检 | 不判断构件语义 |
 | `engine/detector` | 图层匹配、几何规则、文字证据、置信度 | 不建模型、不改参数 |
+| `engine/graph` | 由构件建关系图：轴网交点、柱锚点、墙共线、梁支座、重叠 | 不修改构件几何、不裁决 |
 | `engine/resolver` | 应用裁决、更新 IR、记录冲突 | 不扩散到未点名构件 |
-| `engine/planner` | 指令生成、映射校验、批次与哈希 | 不访问 Revit |
+| `engine/planner` | 指令生成、映射校验、批次与哈希、随行附带图关系 | 不访问 Revit |
 | `engine/executor` | 批次执行、幂等、快照、结果记录 | 不读图、不推断 |
-| `engine/verifier` | 模型与原图/IR 比对 | 不自动修复 |
-| `engine/reporter` | 五段式报告 | 不做评价性结论 |
-| `pipeline` | 串起七步、落盘、状态流转 | 不承载业务规则 |
+| `engine/verifier` | 模型与原图/IR 比对（含拓扑） | 不自动修复 |
+| `engine/reporter` | 六段式报告（含图关系与拓扑） | 不做评价性结论 |
+| `pipeline` | 串起八步、落盘、状态流转、图查询 | 不承载业务规则 |
 | `server` | MCP 工具封装、错误转统一返回体 | 不含业务逻辑 |
+
+## 3.1 为什么构件图要单独成层
+
+识别层只回答「这是什么构件」，回答不了「它和谁有关系」。模型要判断一根梁该不该建、建在哪一层，必须看到支座与轴网锚点；执行层要判断一批事务会不会撞车，也必须看到重叠关系。把这些塞进 detector 会让识别规则与拓扑规则互相污染：识别错了会带出假关系，关系错了会反过来改识别结果。因此单独一层，只读构件、只产关系、不改构件。
 
 ## 4. 置信度模型
 
@@ -62,39 +69,40 @@ confidence = 0.5 * layer_hit + 0.3 * geometry_ok + 0.2 * text_hit - 0.25 * confl
 ```
 
 - `layer_hit`：图层名命中该类构件的正则；
-- `geometry_ok`：几何形态满足该类构件约束（闭合矩形、平行线间距、梁线长度等）；
-- `text_hit`：找到了可解析的标注；
+- `geometry_ok`：几何形态满足约束（闭合矩形、平行线间距、梁线长度等）；
+- `text_hit`：找到可解析的标注；
 - `conflict`：标注与几何矛盾（如标注 500x500、几何 600x600）。
 
-默认阈值 `0.75`：低于阈值的构件进入 `ambiguous`，并且**仍然保留在 IR 中**，由裁决环节决定 accept / modify / exclude。这样模型能看到完整候选集，而不是只看到一个被过滤后的结果。
+默认阈值 `0.75`：低于阈值的构件进入 `ambiguous`，且**仍保留在 IR 中**，由裁决决定 accept / modify / exclude。模型看到的是完整候选集，不是被过滤后的结果。
 
 ## 5. 执行层两种模式
 
-| 模式 | 触发条件 | 行为 |
+| 模式 | 触发 | 行为 |
 | --- | --- | --- |
 | `local` | 未配置 `bridge_url` | 校验指令并记录 `created.json`，不触碰 Revit；用于识别链路测试与 CI |
 | `bridge` | 配置了 `bridge_url` | 逐批 POST 到 Revit Add-in，单批一个 Transaction，失败整批回滚 |
 
-`local` 模式不是"假装建模成功"：它明确把 `mode` 写进结果和报告，避免使用者误以为模型已生成。
+`local` 不是「假装建模成功」：模式明确写入结果与报告，避免误以为模型已生成。
 
 ## 6. 幂等与事务
 
-- 幂等键在 `created_keys` 表持久化；`resume=true` 时已存在的键直接跳过；
-- 同一批次内任一构件失败按整批回滚（由 Revit 侧 Transaction 保证）；
-- 执行前写 `run/snapshot.json` 记录快照标识；本项目不提供删除操作，因此"回退"指撤销本次新增，而不是删除历史构件；
-- `batch_size` 默认 80，限制单事务体量，避免大图纸一次提交导致 Revit 卡死。
+- 幂等键持久化在 `created_keys` 表；`resume=true` 时已存在的键直接跳过；
+- 同批内任一构件失败按整批回滚（Revit 侧 Transaction 保证）；
+- 执行前写 `run/snapshot.json`；本项目不提供删除操作，「回退」指撤销本次新增，不是删除历史构件；
+- `batch_size` 默认 80，限制单事务体量，避免大图纸一次提交卡死 Revit。
 
 ## 7. 安全边界
 
-- 路径白名单：`Config.resolve_path` 拒绝工作区之外的路径（`E-1001`）；
-- 不执行图纸中的任何脚本或外部命令，唯一的外部调用是用户显式配置的 DWG 转换器；
-- MCP 服务本身不开放网络端口（stdio 传输），Revit 桥接只连本机 `127.0.0.1`；
+- 路径白名单：`Config.resolve_path` / `Config.is_allowed` 用 `Path.relative_to` 判定包含关系，拒绝工作区外路径（`E-1001`）；字符串前缀判断会让 `/workspace-evil` 冒充 `/workspace` 子目录，已弃用；
+- 不执行图纸中的任何脚本或外部命令；唯一外部调用是用户显式配置的 DWG 转换器（参数经 `shlex.split` 切分，不经 shell）；
+- MCP 服务不开放网络端口（stdio 传输），Revit 桥接只连本机 `127.0.0.1`；
 - 报告与日志不写入图纸以外的用户隐私数据。
 
 ## 8. 已知限制
 
-1. 识别依赖图层命名习惯；命名混乱的图纸需要先整理图层或补规则。
-2. 墙按"平行双线"识别，单线墙、厚度标注墙无法识别。
-3. 梁的支座与跨数不推断，只按图元位置建模。
-4. 单位缺省按毫米处理，若图纸实际为米制会整体放大 1000 倍，体检会给出 `unit_unknown` 提示。
+1. 识别依赖图层命名习惯；命名混乱的图纸需先整理图层或补规则。
+2. 墙按「平行双线」识别，单线墙、厚度标注墙无法识别。
+3. 梁按端点邻近判定支座，未做连续梁/次梁传力分析；连续梁仍按整段建模。
+4. 单位缺省按毫米处理，米制图纸会整体放大 1000 倍，体检给 `unit_unknown` 提示。
 5. Revit 侧参考实现只覆盖矩形柱、基本墙、矩形梁与轴网四类。
+6. 图关系仅覆盖结构四类构件的水平投影关系，不含洞口、板、节点详图与竖向传力路径。

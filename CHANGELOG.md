@@ -1,5 +1,22 @@
 # 变更记录
 
+## 0.2.0 (2026-11-17)
+
+构件图层与转换链路规格。
+
+- 新增：`engine/graph.py` 构件图层——轴网交点入节点、6 类语义边（`column_on_grid` / `column_at_intersection` / `wall_follows_grid` / `beam_end_supported` / `wall_intersects_column` / `element_overlap` / `grid_line_at_intersection`）、4 类拓扑异常（`not_on_grid` / `beam_unsupported` / `element_overlap` / `isolated_element`）
+- 新增：IR schema 1.1，新增 `graph` 字段（图自身版本 `element-graph/1.0`），`detect_components` 同时返回 `graph` 与 `graph_summary`
+- 新增：第 8 个 MCP 工具 `query_graph`，按构件 / 关系类型 / 邻域深度取子图
+- 新增：拓扑异常并入 `ambiguous`，复用既有裁决链路，报告新增「图关系与拓扑校验」章节（五段变六段）
+- 新增：`check_model` 增加 `topology` 检查；`generate_revit_script` 指令随行携带 `relations` 与 `issues`
+- 新增：`rules/structure_default.json` 的 `graph` 阈值段；新增 `docs/conversion-pipeline.md`、`docs/graph-model.md`
+- 修复：路径白名单用字符串前缀判断，`/workspace-evil` 可绕过 `/workspace`，改为 `Path.relative_to` 包含判定（`config.is_allowed`）
+- 修复：幂等键直接哈希浮点几何，`599.99999` 与 `600.0` 生成不同键，改为递归 `round(0.1)` 后再哈希
+- 修复：桥接只回 `revit_id` 不回坐标，真实 Revit 下 `check_model` 的 `offset` 永远为空，改为回读 `LocationPoint` 并回传 `position` / `level`
+- 修复：DWG 转换器整串当作 `argv[0]`，无法带参数，改用 `shlex.split`
+- 修复：标高回退默认值混用 `E-3002`（与「标高缺失跳过」同码），新增 `W-1004` 表达「已回退默认标高」
+- 已知限制：Revit Add-in 仍未在真实项目验收；图关系仅覆盖水平投影关系
+
 ## 0.1.0 (2026-11-17)
 
 首个可运行版本。
