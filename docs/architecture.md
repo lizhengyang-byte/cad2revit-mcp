@@ -1,0 +1,100 @@
+# 架构说明
+
+## 1. 设计目标
+
+| 目标 | 对应设计 |
+| --- | --- |
+| 结果可解释 | 每个构件带 `evidence` 与 `confidence`，疑点单独列出 |
+| 结果可复现 | 识别规则与执行指令都是确定性的，同样输入 → 同样输出 |
+| 出错可回退 | 批次事务、执行前快照、只写不删 |
+| 重复执行安全 | 幂等键 `sha256(element_id + geometry + rule_version)` |
+| 职责清晰 | 模型判断语义，代码负责几何与执行 |
+
+明确不追求：全自动、覆盖多专业、端到端无人值守。
+
+## 2. 数据流
+
+```
+DXF/DWG
+  │ parser        单位归一(mm)、图元抽取、体检
+  ▼
+ParsedDrawing  ── segments / polylines / blocks / texts / layers / health
+  │ detector      图层正则 + 几何约束 + 就近标注
+  ▼
+IR (schema 1.0) ── elements[] + ambiguous[]
+  │ resolver      人工/模型裁决
+  ▼
+IR' 
+  │ planner       族类型与标高映射、批次切分、指令哈希
+  ▼
+plan.json       ── batches[{instruction_hash, instructions[]}]
+  │ executor      本地模拟 或 Revit HTTP 桥接；幂等去重
+  ▼
+run/created.json + SQLite runs/created_keys
+  │ verifier      漏识别、错位、参数缺失、重复
+  ▼
+check.json
+  │ reporter
+  ▼
+report.md
+```
+
+每个阶段都把产物落盘到 `workspace/tasks/<task_id>/`，因此任何一步都可以单独重跑，不需要从头走。
+
+## 3. 模块职责
+
+| 模块 | 职责 | 不做 |
+| --- | --- | --- |
+| `engine/parser` | 读图、单位换算、图元归一、体检 | 不判断构件语义 |
+| `engine/detector` | 图层匹配、几何规则、文字证据、置信度 | 不建模型、不改参数 |
+| `engine/resolver` | 应用裁决、更新 IR、记录冲突 | 不扩散到未点名构件 |
+| `engine/planner` | 指令生成、映射校验、批次与哈希 | 不访问 Revit |
+| `engine/executor` | 批次执行、幂等、快照、结果记录 | 不读图、不推断 |
+| `engine/verifier` | 模型与原图/IR 比对 | 不自动修复 |
+| `engine/reporter` | 五段式报告 | 不做评价性结论 |
+| `pipeline` | 串起七步、落盘、状态流转 | 不承载业务规则 |
+| `server` | MCP 工具封装、错误转统一返回体 | 不含业务逻辑 |
+
+## 4. 置信度模型
+
+```
+confidence = 0.5 * layer_hit + 0.3 * geometry_ok + 0.2 * text_hit - 0.25 * conflict
+```
+
+- `layer_hit`：图层名命中该类构件的正则；
+- `geometry_ok`：几何形态满足该类构件约束（闭合矩形、平行线间距、梁线长度等）；
+- `text_hit`：找到了可解析的标注；
+- `conflict`：标注与几何矛盾（如标注 500x500、几何 600x600）。
+
+默认阈值 `0.75`：低于阈值的构件进入 `ambiguous`，并且**仍然保留在 IR 中**，由裁决环节决定 accept / modify / exclude。这样模型能看到完整候选集，而不是只看到一个被过滤后的结果。
+
+## 5. 执行层两种模式
+
+| 模式 | 触发条件 | 行为 |
+| --- | --- | --- |
+| `local` | 未配置 `bridge_url` | 校验指令并记录 `created.json`，不触碰 Revit；用于识别链路测试与 CI |
+| `bridge` | 配置了 `bridge_url` | 逐批 POST 到 Revit Add-in，单批一个 Transaction，失败整批回滚 |
+
+`local` 模式不是"假装建模成功"：它明确把 `mode` 写进结果和报告，避免使用者误以为模型已生成。
+
+## 6. 幂等与事务
+
+- 幂等键在 `created_keys` 表持久化；`resume=true` 时已存在的键直接跳过；
+- 同一批次内任一构件失败按整批回滚（由 Revit 侧 Transaction 保证）；
+- 执行前写 `run/snapshot.json` 记录快照标识；本项目不提供删除操作，因此"回退"指撤销本次新增，而不是删除历史构件；
+- `batch_size` 默认 80，限制单事务体量，避免大图纸一次提交导致 Revit 卡死。
+
+## 7. 安全边界
+
+- 路径白名单：`Config.resolve_path` 拒绝工作区之外的路径（`E-1001`）；
+- 不执行图纸中的任何脚本或外部命令，唯一的外部调用是用户显式配置的 DWG 转换器；
+- MCP 服务本身不开放网络端口（stdio 传输），Revit 桥接只连本机 `127.0.0.1`；
+- 报告与日志不写入图纸以外的用户隐私数据。
+
+## 8. 已知限制
+
+1. 识别依赖图层命名习惯；命名混乱的图纸需要先整理图层或补规则。
+2. 墙按"平行双线"识别，单线墙、厚度标注墙无法识别。
+3. 梁的支座与跨数不推断，只按图元位置建模。
+4. 单位缺省按毫米处理，若图纸实际为米制会整体放大 1000 倍，体检会给出 `unit_unknown` 提示。
+5. Revit 侧参考实现只覆盖矩形柱、基本墙、矩形梁与轴网四类。

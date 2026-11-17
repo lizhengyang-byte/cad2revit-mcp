@@ -1,0 +1,38 @@
+{
+  "version": "structure-2026.11",
+  "discipline": "structure",
+  "layers": {
+    "grid": ["(?i)axis", "(?i)dote", "轴线", "轴网", "定位轴"],
+    "column": ["(?i)colu", "(?i)pillar", "\\bKZ", "框架柱", "构造柱", "柱"],
+    "wall": ["(?i)wall", "\\bQT", "剪力墙", "砌体墙", "墙"],
+    "beam": ["(?i)beam", "\\bKL", "\\bLL", "\\bQL", "框架梁", "连梁", "梁"],
+    "annotation": ["(?i)dim", "(?i)text", "标注", "文字", "尺寸"]
+  },
+  "wall": {
+    "min_thickness": 60,
+    "max_thickness": 400,
+    "min_length": 300,
+    "overlap_ratio": 0.6
+  },
+  "column": {
+    "min_section": 200,
+    "max_section": 1500,
+    "default_section": [400, 400]
+  },
+  "beam": {
+    "min_length": 1000,
+    "default_section": [250, 500],
+    "label_pattern": "(?i)(?:KL|LL|QL|L|B)\\s*\\d+[a-zA-Z]?\\s*[\\(（]?\\d*[\\)）]?\\s*(\\d{3})\\s*[xX×*]\\s*(\\d{3})"
+  },
+  "grid": {
+    "min_length_ratio": 0.4
+  },
+  "confidence": {
+    "layer_weight": 0.5,
+    "geometry_weight": 0.3,
+    "text_weight": 0.2,
+    "conflict_penalty": 0.25,
+    "threshold": 0.75,
+    "review_threshold": 0.9
+  }
+}
