@@ -52,11 +52,29 @@ def build_report(task_id: str, parsed_summary: Dict[str, Any], ir: IRDocument, s
         manual.append(f"参数缺失 {item['element_id']}：{', '.join(item['missing'])}")
     for item in verification.get("checks", {}).get("offset", []):
         manual.append(f"定位偏差 {item['element_id']}：{item['deviation_mm']}mm")
+    for issue in ir.graph.get("issues", []):
+        manual.append(f"拓扑复核 {issue['element_id']}（{issue['kind']}）："
+                      f"{issue.get('detail', {}).get('reason', '')}")
     if not manual:
         manual.append("无，报告可直接归档")
 
     metrics = verification.get("metrics", {})
     auto_ratio = metrics.get("auto_ratio", 0.0)
+
+    graph = ir.graph or {}
+    relation_rows = [
+        [edge["type"], edge["source"], edge["target"],
+         f'{edge.get("weight", 0)} {edge.get("unit", "")}']
+        for edge in graph.get("edges", []) if edge.get("type") != "same_level"
+    ][:40]
+    issue_rows = [
+        [issue["element_id"], issue["kind"], issue.get("detail", {}).get("reason", "")]
+        for issue in graph.get("issues", [])
+    ]
+    intersection_rows = [
+        [item["id"], "/".join(item.get("grid_names", [])), f'{item["x"]}, {item["y"]}']
+        for item in graph.get("grid_intersections", [])
+    ]
 
     lines = [
         f"# 建模报告 {task_id}",
@@ -78,9 +96,11 @@ def build_report(task_id: str, parsed_summary: Dict[str, Any], ir: IRDocument, s
         "",
         _table(["构件", "识别数量", "已建模", "未建模"], by_type_rows),
         "",
-        f"- 自动完成比例：{auto_ratio:.0%}（已建模 {metrics.get('created', 0)} / 识别 {metrics.get('elements', 0)}）",
+        f"- 自动完成比例：{auto_ratio:.0%}"
+        f"（已建模 {metrics.get('created', 0)} / 识别 {metrics.get('elements', 0)}）",
         f"- 平均置信度：{stats.get('mean_confidence', 0.0)}　"
-        f"低置信度：{stats.get('low_confidence', 0)}（{stats.get('low_confidence_ratio', 0.0):.0%}）",
+        f"低置信度：{stats.get('low_confidence', 0)}"
+        f"（{stats.get('low_confidence_ratio', 0.0):.0%}）",
         f"- 计划构件：{plan_stats.get('planned', 0)}　跳过：{plan_stats.get('skipped', 0)}　"
         f"批次：{plan_stats.get('batches', 0)}",
         "",
@@ -88,11 +108,30 @@ def build_report(task_id: str, parsed_summary: Dict[str, Any], ir: IRDocument, s
         "",
         _table(["构件", "疑点类型", "裁决"], ambiguity_rows),
         "",
-        "## 四、执行失败明细",
+        "## 四、图关系与拓扑校验",
+        "",
+        f"- 图摘要：{graph.get('summary', {}).get('headline', '未生成构件图')}",
+        f"- 轴网交点：{graph.get('metrics', {}).get('grid_intersections', 0)}　"
+        f"孤立构件：{graph.get('metrics', {}).get('isolated', 0)}　"
+        f"拓扑异常：{graph.get('metrics', {}).get('issues', 0)}",
+        "",
+        "### 关键关系（最多 40 条）",
+        "",
+        _table(["关系", "源构件", "目标构件", "数值"], relation_rows),
+        "",
+        "### 轴网交点",
+        "",
+        _table(["交点", "轴线", "坐标 (mm)"], intersection_rows),
+        "",
+        "### 拓扑异常",
+        "",
+        _table(["构件", "异常类型", "说明"], issue_rows),
+        "",
+        "## 五、执行失败明细",
         "",
         _table(["构件", "错误码", "原因"], failure_rows),
         "",
-        "## 五、待人工复核清单",
+        "## 六、待人工复核清单",
         "",
     ]
     lines.extend(f"{i}. {item}" for i, item in enumerate(manual, 1))

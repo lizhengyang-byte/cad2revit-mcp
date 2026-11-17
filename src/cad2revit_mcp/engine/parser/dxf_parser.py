@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import shlex
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -54,8 +55,11 @@ def _maybe_convert_dwg(path: Path, converter: str) -> Path:
             {"file": path.name},
         )
     target = path.with_suffix(".dxf")
+    # Converter may carry flags ("ODAFileConverter --recurse"); split it instead of
+    # passing the whole string as argv[0].
+    command = shlex.split(converter)
     try:
-        subprocess.run([converter, str(path), str(target)], check=True, timeout=300)
+        subprocess.run([*command, str(path), str(target)], check=True, timeout=300)
     except Exception as exc:  # pragma: no cover - depends on external tool
         raise AppError(E_INPUT_FILE, f"DWG conversion failed: {exc}") from exc
     return target

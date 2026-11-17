@@ -23,12 +23,23 @@ from typing import Any, Dict, List
 from ..errors import E_EXEC_API, E_EXEC_LOCKED, W_PARTIAL, AppError, warning
 
 
+def _stable(value: Any) -> Any:
+    """Normalise floats so 599.99999 and 600.0 hash to the same key."""
+    if isinstance(value, float):
+        return round(value, 1)
+    if isinstance(value, dict):
+        return {key: _stable(item) for key, item in sorted(value.items())}
+    if isinstance(value, (list, tuple)):
+        return [_stable(item) for item in value]
+    return value
+
+
 def idempotency_key(element: Dict[str, Any], rule_version: str) -> str:
-    payload = json.dumps({
+    payload = json.dumps(_stable({
         "element_id": element["element_id"],
         "geometry": element.get("geometry", {}),
         "rule_version": rule_version,
-    }, sort_keys=True, ensure_ascii=False)
+    }), sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -99,6 +110,7 @@ class Executor:
                         "revit_id": result.get("revit_id", ""),
                         "op": instruction["op"],
                         "level": instruction.get("level"),
+                        "position": result.get("position"),
                     })
                     key_pairs.append((key, instruction["element_id"]))
                     batch_success += 1
