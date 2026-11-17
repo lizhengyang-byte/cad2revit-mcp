@@ -21,4 +21,5 @@ def test_ir_carries_element_graph():
     payload = ir.to_dict()
     assert payload["graph"]["schema"] == "element-graph/1.0"
     assert IRDocument.from_dict(payload).graph["nodes"][0]["id"] == "C-001"
-    assert payload["schema_version"] == "1.1"
+    assert payload["schema_version"] == IR_SCHEMA_VERSION
+    assert payload["floors"] == []
