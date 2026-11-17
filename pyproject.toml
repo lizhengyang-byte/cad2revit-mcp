@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cad2revit-mcp"
+version = "0.1.0"
+description = "LLM-driven 2D CAD to Revit BIM conversion exposed as MCP tools"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "lizhengyang-byte" }]
+keywords = ["mcp", "revit", "cad", "dxf", "bim", "llm"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: GIS",
+]
+dependencies = [
+  "mcp>=1.0",
+  "ezdxf>=1.0",
+  "shapely>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+[project.scripts]
+cad2revit-mcp = "cad2revit_mcp.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/lizhengyang-byte/cad2revit-mcp"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100

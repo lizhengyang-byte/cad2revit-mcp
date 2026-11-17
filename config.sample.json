@@ -1,0 +1,18 @@
+{
+  "workspace_dir": "./workspace",
+  "allowed_paths": ["./workspace"],
+  "confidence_threshold": 0.75,
+  "review_threshold": 0.9,
+  "batch_size": 80,
+  "rule_set_version": "structure-2026.11",
+  "default_level": "1F",
+  "bridge_url": "",
+  "dwg_converter": "",
+  "family_map": {
+    "grid": {"family": "轴网", "type": "轴网"},
+    "column": {"family": "结构柱-混凝土矩形", "type": "矩形柱"},
+    "wall": {"family": "基本墙", "type": "常规 - 200mm"},
+    "beam": {"family": "混凝土矩形梁", "type": "矩形梁"}
+  },
+  "level_map": {"1F": 0.0, "2F": 3000.0, "3F": 6000.0}
+}
