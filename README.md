@@ -2,7 +2,7 @@
 
 把二维结构 CAD 图纸转换成 Revit 三维模型的 MCP 工具。定位是**让大语言模型通过 MCP 做「二维翻三维」的翻模**：模型负责看图、判断和处置疑点，工具负责确定性的几何处理、规则识别与建模执行。
 
-> 现状：`0.2.0`。新增构件图关系层（`query_graph`）与转换链路规格；识别与执行链路可端到端跑通，执行层以「本地模拟 + Revit 参考 Add-in」两种形态提供，**尚未在真实 Revit 项目上完成验收**。请勿直接用于交付级生产。
+> 现状：`0.2.1`。新增构件图关系层（`query_graph`）与转换链路规格；识别与执行链路可端到端跑通，执行层以「本地模拟 + Revit 参考 Add-in」两种形态提供，**尚未在真实 Revit 项目上完成验收**。请勿直接用于交付级生产。
 
 ## 它解决什么问题
 
@@ -35,19 +35,27 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-依赖：`mcp`、`ezdxf`、`shapely`。
+依赖：`mcp>=1.0,<2`、`ezdxf`、`shapely`。`mcp` 2.x 已把 `FastMCP` 改名为 `MCPServer`，本版仍用 1.x API，因此上限锁在 `<2`；直接用 `pip install cad2revit-mcp` 也一样受此约束。
+
+安装后验证：
+
+```bash
+cad2revit-mcp --version          # 0.2.1
+cad2revit-mcp --tools            # 列出八个工具
+cad2revit-mcp --selftest --workspace ./workspace
+```
 
 ## 快速跑通（不需要 Revit）
 
 ```bash
-# 生成示例图纸并跑完整流程
+# 生成示例图纸并跑完整流程（安装后无需 PYTHONPATH）
+cad2revit-mcp --selftest --workspace ./workspace
+
+# 源码未安装时的跑法
 PYTHONPATH=src python -m cad2revit_mcp --selftest --workspace ./workspace
 
-# 查看对外暴露的工具（应为八个）
-PYTHONPATH=src python -m cad2revit_mcp --tools
-
 # 启动 MCP 服务（stdio）
-PYTHONPATH=src python -m cad2revit_mcp
+cad2revit-mcp
 ```
 
 自检会在 `./workspace/tasks/<task_id>/` 下留下 `parsed/`、`ir/`、`script/`、`run/`、`check/`、`report.md`，可直接打开报告看识别结果与图关系。
@@ -58,16 +66,17 @@ PYTHONPATH=src python -m cad2revit_mcp
 {
   "mcpServers": {
     "cad2revit": {
-      "command": "python",
-      "args": ["-m", "cad2revit_mcp"],
+      "command": "/absolute/path/to/cad2revit-mcp/.venv/bin/cad2revit-mcp",
+      "args": [],
       "env": {
-        "PYTHONPATH": "/absolute/path/to/cad2revit-mcp/src",
         "CAD2REVIT_WORKSPACE": "/absolute/path/to/workspace"
       }
     }
   }
 }
 ```
+
+也可继续用 `python -m cad2revit_mcp`（需将 `src` 加入 `PYTHONPATH`）。工作区目录必须先存在；服务不会自行创建白名单之外的路径。
 
 ## 八个工具
 
@@ -128,6 +137,8 @@ src/cad2revit_mcp/
 ├── errors.py            # 错误码与统一返回体
 ├── store.py             # SQLite：任务、疑点、批次、幂等键
 ├── geometry.py          # 平行、重叠、闭合、面积等纯函数
+├── samples.py           # 示例图纸生成（--selftest 用）
+├── rules/               # 随包分发的规则 JSON
 └── engine/
     ├── parser/          # ezdxf 解析与单位归一
     ├── detector/        # 规则库 + 四类构件识别与置信度
@@ -150,7 +161,7 @@ src/cad2revit_mcp/
 3. **文字证据**：就近取标注，解析 `600x600`、`250x600` 这类截面；标注与几何矛盾时扣分并生成疑点。
 4. **置信度**：`0.5×图层 + 0.3×几何 + 0.2×标注`，冲突扣 `0.25`。默认阈值 `0.75`，低于阈值的构件全部进疑点清单，不会静默建模。
 
-规则库是可替换的 JSON：[`rules/structure_default.json`](rules/structure_default.json)。构件图阈值在同文件的 `graph` 段。
+规则库是可替换的 JSON：[`rules/structure_default.json`](rules/structure_default.json)。构件图阈值在同文件的 `graph` 段；包内另有一份运行时副本（`src/cad2revit_mcp/rules/`），两者由用例保证一致。
 
 ## Revit 侧
 
@@ -189,19 +200,19 @@ python -m pytest -q
 ruff check src tests
 ```
 
-25 个用例覆盖解析、四类构件识别、构件图（交点锚定/支座/孤立/子图切片/确定性）、批次规划、幂等执行、回验、路径白名单（含兄弟目录前缀绕过）与 IR 往返。
+28 个用例覆盖解析、四类构件识别、构件图（交点锚定/支座/孤立/子图切片/确定性）、批次规划、幂等执行、回验、路径白名单（含兄弟目录前缀绕过）、IR 往返与打包完整性。
 
 ## 路线图
 
 - `0.1`：结构四类构件、DXF、规则识别、本地模拟执行、报告
-- `0.2`（当前）：构件图与拓扑校验、IR 1.1、`query_graph`、转换链路规格、安全与幂等修复
+- `0.2`（当前）：构件图与拓扑校验、IR 1.1、`query_graph`、转换链路规格、安全与幂等修复、安装可用性修复
 - `0.3`：Revit Add-in 实测与族模板校验、DWG 转换链路、圆弧/斜向轴网
 - `0.4`：OCR 标注、梁跨与竖向传力关系、批量图纸队列
 - 之后：建筑与机电专业、模型 diff
 
 ## 贡献
 
-见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。提交前请确保 `pytest` 与 `ruff` 全绿，并说明规则改动对置信度与图关系的影响。
+见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。提交前请确保 `pytest` 与 `ruff` 全绿，并说明规则改动对置信度与图关系的影响；改动了 `rules/structure_default.json` 时需同步包内副本。
 
 ## 免责声明
 
