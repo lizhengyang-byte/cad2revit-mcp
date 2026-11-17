@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-IR_SCHEMA_VERSION = "1.1"
+IR_SCHEMA_VERSION = "1.2"
 
 ELEMENT_TYPES = ("grid", "column", "wall", "beam")
 
@@ -56,6 +56,9 @@ class IRDocument:
     elements: List[Element] = field(default_factory=list)
     ambiguous: List[str] = field(default_factory=list)
     graph: Dict[str, Any] = field(default_factory=dict)
+    # schema 1.2: one entry per storey.  ``sheet`` stays the first storey so
+    # older readers keep working, and ``elements`` stays the flat view.
+    floors: List[Dict[str, Any]] = field(default_factory=list)
     schema_version: str = IR_SCHEMA_VERSION
 
     def to_dict(self) -> Dict[str, Any]:
@@ -66,6 +69,7 @@ class IRDocument:
             "elements": [e.to_dict() for e in self.elements],
             "ambiguous": list(self.ambiguous),
             "graph": dict(self.graph),
+            "floors": list(self.floors),
         }
 
     @classmethod
@@ -76,6 +80,7 @@ class IRDocument:
             elements=[Element.from_dict(e) for e in data.get("elements", [])],
             ambiguous=list(data.get("ambiguous") or []),
             graph=dict(data.get("graph") or {}),
+            floors=list(data.get("floors") or []),
             schema_version=str(data.get("schema_version", IR_SCHEMA_VERSION)),
         )
 
@@ -163,6 +168,25 @@ class ParsedDrawing:
         }
 
 
+def floor_summaries(ir: "IRDocument") -> List[Dict[str, Any]]:
+    """Per-storey digest for the language model (not a full element dump)."""
+    result = []
+    for floor in ir.floors:
+        graph = floor.get("graph") or {}
+        conflicts = floor.get("conflicts") or []
+        result.append({
+            "level": floor.get("level"),
+            "elevation_mm": floor.get("elevation_mm"),
+            "source_file": floor.get("source_file"),
+            "region_id": floor.get("region_id"),
+            "counts": floor.get("counts", {}),
+            "headline": (graph.get("summary") or {}).get("headline", ""),
+            "issues": len(graph.get("issues", [])),
+            "conflicts": conflicts,
+        })
+    return result
+
+
 def element_sort_key(element: Element) -> str:
     return element.id
 
@@ -195,4 +219,5 @@ __all__ = [
     "ParsedDrawing",
     "required_params",
     "element_title",
+    "floor_summaries",
 ]
