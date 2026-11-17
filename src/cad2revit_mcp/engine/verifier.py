@@ -8,6 +8,8 @@ from typing import Any, Dict, List
 from ..geometry import distance
 from ..models import Element, IRDocument, required_params
 
+CROSS_FLOOR_ISSUES = ("column_misaligned", "level_gap_unverified")
+
 
 def _position_of(element: Element):
     geometry = element.geometry
@@ -20,13 +22,18 @@ def _position_of(element: Element):
 
 def verify(ir: IRDocument, execution: Dict[str, Any], tolerance_mm: float = 50.0,
            checks: List[str] | None = None) -> Dict[str, Any]:
-    enabled = checks or ["missing", "offset", "param", "duplicate", "topology"]
-    created = execution.get("created", [])
+    enabled = checks or ["missing", "offset", "param", "duplicate", "topology", "vertical"]
+    all_created = execution.get("created", [])
+    # level instructions are not model elements; they must not inflate the
+    # "how much of the drawing got built" ratio
+    valid_ids = {element.id for element in ir.elements}
+    created = [item for item in all_created if item.get("element_id") in valid_ids]
     created_ids = [item["element_id"] for item in created]
     created_set = set(created_ids)
 
     result: Dict[str, List[Dict[str, Any]]] = {
         "missing": [], "offset": [], "param": [], "duplicate": [], "topology": [],
+        "vertical": [],
     }
 
     if "missing" in enabled:
@@ -85,6 +92,28 @@ def verify(ir: IRDocument, execution: Dict[str, Any], tolerance_mm: float = 50.0
                 "position": created_by_id.get(element_id, {}).get("position"),
             })
 
+    if "vertical" in enabled:
+        graph = ir.graph or {}
+        for issue in graph.get("issues", []):
+            if issue.get("kind") not in CROSS_FLOOR_ISSUES:
+                continue
+            result["vertical"].append({
+                "element_id": issue.get("element_id"),
+                "kind": issue.get("kind"),
+                "level": issue.get("level"),
+                "reason": (issue.get("detail") or {}).get("reason", ""),
+                "created": issue.get("element_id") in created_set,
+            })
+        for floor in ir.floors:
+            for conflict in floor.get("conflicts", []):
+                result["vertical"].append({
+                    "element_id": floor.get("region_id"),
+                    "kind": conflict.get("code"),
+                    "level": floor.get("level"),
+                    "reason": conflict.get("message", ""),
+                    "created": False,
+                })
+
     total = len(ir.elements)
     problem_count = sum(len(v) for v in result.values())
     metrics = {
@@ -98,5 +127,6 @@ def verify(ir: IRDocument, execution: Dict[str, Any], tolerance_mm: float = 50.0
         "param": len(result["param"]),
         "duplicate": len(result["duplicate"]),
         "topology": len(result["topology"]),
+        "vertical": len(result["vertical"]),
     }
     return {"checks": result, "metrics": metrics}
