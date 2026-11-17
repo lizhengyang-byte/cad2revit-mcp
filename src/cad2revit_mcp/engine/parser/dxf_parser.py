@@ -16,10 +16,9 @@ from typing import Any, Dict, List, Tuple
 
 import ezdxf
 
-from ...errors import AppError, E_INPUT_FILE, E_INPUT_HEALTH
+from ...errors import E_INPUT_FILE, E_INPUT_HEALTH, AppError
 from ...geometry import dedupe_segments, is_closed_polyline
 from ...models import ParsedDrawing, Segment, TextItem
-
 
 UNIT_SCALE = {
     0: 1.0,      # unitless, assume mm
@@ -147,7 +146,6 @@ def parse_dxf(path: Path, config) -> ParsedDrawing:
             touch(layer, "TEXT")
 
     segments = dedupe_segments(segments)
-    unique_duplicates = max(0, seq_seg - len(segments))
 
     total_entities = len(segments) + len(polylines) + len(blocks) + len(texts)
     line_ratio = len(segments) / max(total_entities, 1)

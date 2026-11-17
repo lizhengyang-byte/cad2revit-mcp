@@ -14,7 +14,6 @@ from ...geometry import (
     bbox,
     bbox_size,
     distance,
-    midpoint,
     overlap_length,
     point_line_distance,
     project_parameter,
@@ -57,7 +56,6 @@ def detect_grids(parsed: ParsedDrawing, rules: Dict[str, Any]) -> List[Element]:
     min_length = span * float(rules.get("grid", {}).get("min_length_ratio", 0.4))
     elements = []
     index = 0
-    axis_points = [(s.start[0], s.start[1]) for s in parsed.segments if match_layer(s.layer, patterns)]
     for segment in parsed.segments:
         if not match_layer(segment.layer, patterns):
             continue
@@ -162,7 +160,6 @@ def detect_columns(parsed: ParsedDrawing, rules: Dict[str, Any]) -> Tuple[List[E
             labeled = section_label_in(text.content)
             if labeled:
                 section = labeled
-        layer_hit = match_layer(layer, patterns) or match_layer(name, patterns)
         elements.append(make(insert, section, layer, block["id"], geometry_ok=False,
                              text=text, conflict=False,
                              extra_evidence={"block": name}))
@@ -229,6 +226,8 @@ def detect_walls(parsed: ParsedDrawing, rules: Dict[str, Any]) -> Tuple[List[Ele
 
 
 def _parallel(a, b, tol_deg: float = 1.5) -> bool:
+    import math
+
     dx1, dy1 = a.end[0] - a.start[0], a.end[1] - a.start[1]
     dx2, dy2 = b.end[0] - b.start[0], b.end[1] - b.start[1]
     len1 = (dx1 * dx1 + dy1 * dy1) ** 0.5
@@ -236,8 +235,6 @@ def _parallel(a, b, tol_deg: float = 1.5) -> bool:
     if len1 == 0 or len2 == 0:
         return False
     cross = abs(dx1 * dy2 - dy1 * dx2) / (len1 * len2)
-    angle = 0.0
-    import math
     angle = math.degrees(math.asin(min(1.0, cross)))
     return angle <= tol_deg
 
