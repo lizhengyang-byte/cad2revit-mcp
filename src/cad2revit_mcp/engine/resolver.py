@@ -7,7 +7,6 @@ from typing import Any, Dict, List, Tuple
 
 from ..models import Element, IRDocument
 
-
 VALID_ACTIONS = ("accept", "modify", "exclude")
 
 

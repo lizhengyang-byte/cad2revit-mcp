@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-
 E_INPUT_PATH = "E-1001"
 E_INPUT_FILE = "E-1002"
 E_INPUT_HEALTH = "E-1003"

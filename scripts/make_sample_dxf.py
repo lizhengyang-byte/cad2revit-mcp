@@ -6,7 +6,6 @@ from pathlib import Path
 
 import ezdxf
 
-
 LAYERS = {
     "AXIS-轴网": 3,
     "KZ-框架柱": 1,

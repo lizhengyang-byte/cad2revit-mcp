@@ -1,4 +1,4 @@
-from cad2revit_mcp.models import Element, IRDocument, IR_SCHEMA_VERSION
+from cad2revit_mcp.models import IR_SCHEMA_VERSION, Element, IRDocument
 
 
 def test_ir_roundtrip_keeps_schema():

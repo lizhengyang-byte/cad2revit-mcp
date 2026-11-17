@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List
 
-from .errors import AppError, E_INPUT_PATH
+from .errors import E_INPUT_PATH, AppError
 
 DEFAULT_FAMILY_MAP: Dict[str, Dict[str, str]] = {
     "column": {"family": "结构柱-混凝土矩形", "type": "矩形柱"},

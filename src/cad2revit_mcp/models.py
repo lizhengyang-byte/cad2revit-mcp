@@ -7,8 +7,8 @@ project documentation set for the field definition.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
 IR_SCHEMA_VERSION = "1.0"
 

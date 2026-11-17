@@ -1,6 +1,5 @@
 import pytest
 
-from cad2revit_mcp.config import Config
 from cad2revit_mcp.errors import AppError
 
 

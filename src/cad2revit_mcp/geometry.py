@@ -8,7 +8,7 @@ whole pipeline stays reproducible (see the architecture document).
 from __future__ import annotations
 
 import math
-from typing import Iterable, List, Sequence, Tuple
+from typing import Iterable, Sequence, Tuple
 
 Point = Tuple[float, float]
 
