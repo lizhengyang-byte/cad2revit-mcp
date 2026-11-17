@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cad2revit-mcp"
-version = "0.2.2"
+version = "0.3.0"
 description = "LLM-driven 2D CAD to Revit BIM conversion exposed as MCP tools"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -34,9 +34,6 @@ Homepage = "https://github.com/lizhengyang-byte/cad2revit-mcp"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.setuptools.package-data]
-cad2revit_mcp = ["rules/*.json"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
@@ -47,3 +44,6 @@ line-length = 100
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "I"]
 ignore = ["E501"]
+
+[tool.setuptools.package-data]
+cad2revit_mcp = ["rules/*.json"]
