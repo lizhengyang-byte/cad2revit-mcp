@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-IR_SCHEMA_VERSION = "1.0"
+IR_SCHEMA_VERSION = "1.1"
 
 ELEMENT_TYPES = ("grid", "column", "wall", "beam")
 
@@ -55,6 +55,7 @@ class IRDocument:
     sheet: Dict[str, Any]
     elements: List[Element] = field(default_factory=list)
     ambiguous: List[str] = field(default_factory=list)
+    graph: Dict[str, Any] = field(default_factory=dict)
     schema_version: str = IR_SCHEMA_VERSION
 
     def to_dict(self) -> Dict[str, Any]:
@@ -64,6 +65,7 @@ class IRDocument:
             "sheet": dict(self.sheet),
             "elements": [e.to_dict() for e in self.elements],
             "ambiguous": list(self.ambiguous),
+            "graph": dict(self.graph),
         }
 
     @classmethod
@@ -73,6 +75,7 @@ class IRDocument:
             sheet=dict(data.get("sheet") or {}),
             elements=[Element.from_dict(e) for e in data.get("elements", [])],
             ambiguous=list(data.get("ambiguous") or []),
+            graph=dict(data.get("graph") or {}),
             schema_version=str(data.get("schema_version", IR_SCHEMA_VERSION)),
         )
 

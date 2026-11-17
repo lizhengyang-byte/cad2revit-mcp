@@ -11,6 +11,7 @@ from .config import Config
 from .engine.detector.detect import detect_components
 from .engine.detector.rules import load_rules
 from .engine.executor import Executor
+from .engine.graph import build_graph, subgraph
 from .engine.parser.dxf_parser import file_hash, now_iso, parse_dxf
 from .engine.planner import plan as build_plan
 from .engine.reporter import build_report
@@ -141,14 +142,30 @@ class Pipeline:
             rules = load_rules(rule_set if rule_set.endswith(".json") else None)
 
         elements, ambiguities, stats = detect_components(parsed, rules, threshold, element_types)
+        graph = build_graph(
+            [element.to_dict() for element in elements],
+            (rules or {}).get("graph", {}),
+        )
+        # Graph issues are first-class ambiguities: the model must resolve them
+        # through resolve_ambiguities instead of silently modelling around them.
+        ambiguities = [*ambiguities, *[
+            {"element_id": item["element_id"], "kind": item["kind"], "detail": item["detail"]}
+            for item in graph.get("ambiguities", [])
+        ]]
         ir = IRDocument(task_id=task_id, sheet=parsed.sheets[0] if parsed.sheets else {},
-                        elements=elements, ambiguous=[a["element_id"] for a in ambiguities])
+                        elements=elements, ambiguous=[a["element_id"] for a in ambiguities],
+                        graph=graph)
 
         task_dir = self._task_dir(task_id)
         (task_dir / "ir" / "ir.json").write_text(
             json.dumps(ir.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
 
+        seen: set[tuple[str, str]] = set()
         for item in ambiguities:
+            key = (item["element_id"], item["kind"])
+            if key in seen:
+                continue
+            seen.add(key)
             self.store.put_ambiguity(task_id, item["element_id"], item["kind"], item["detail"])
 
         self.store.update_task(task_id, now_iso(), status="detected",
@@ -162,6 +179,8 @@ class Pipeline:
             "task_id": task_id,
             "elements": [e.to_dict() for e in elements],
             "ambiguous": ambiguities,
+            "graph": graph,
+            "graph_summary": graph.get("summary", {}),
             "stats": stats,
             "warnings": warnings,
         }
@@ -192,6 +211,18 @@ class Pipeline:
             "summary": summary,
             "warnings": warnings,
         }
+
+    # -- graph query ------------------------------------------------------
+    def query_graph(self, task_id: str, element_id: str | None = None,
+                    relation_types: List[str] | None = None,
+                    depth: int = 1) -> Dict[str, Any]:
+        """Return a neighbourhood of the element graph for model reasoning."""
+        ir = self._load_ir(task_id)
+        if not ir.graph:
+            raise AppError(E_INPUT_FILE, f"task has no element graph: {task_id}")
+        result = subgraph(ir.graph, element_id, relation_types, depth)
+        result["task_id"] = task_id
+        return result
 
     # -- stage 4: plan ----------------------------------------------------
     def plan(self, task_id: str, level_map: Dict[str, float] | None = None,

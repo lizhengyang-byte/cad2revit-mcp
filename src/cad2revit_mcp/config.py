@@ -79,13 +79,27 @@ class Config:
             path = (self.workspace_dir / path).resolve()
         else:
             path = path.resolve()
-        if not any(str(path).startswith(str(root)) for root in self.allowed_paths):
+        if not self.is_allowed(path):
             raise AppError(
                 E_INPUT_PATH,
                 f"path outside allowed directories: {raw}",
                 {"allowed": [str(p) for p in self.allowed_paths]},
             )
         return path
+
+    def is_allowed(self, path: Path) -> bool:
+        """True when *path* is inside one of the allowed roots.
+
+        A plain string prefix test would accept ``/workspace-evil`` for the
+        root ``/workspace``; path components are compared instead.
+        """
+        for root in self.allowed_paths:
+            try:
+                path.relative_to(root)
+                return True
+            except ValueError:
+                continue
+        return False
 
     def task_dir(self, task_id: str) -> Path:
         path = self.workspace_dir / "tasks" / task_id

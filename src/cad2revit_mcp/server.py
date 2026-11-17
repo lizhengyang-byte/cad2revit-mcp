@@ -1,4 +1,4 @@
-"""MCP server exposing the seven tools defined in the API specification."""
+"""MCP server exposing the eight tools defined in the API specification."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def parse_dwg(file_path: str, discipline: str = "structure", level_name: str = "
 def detect_components(task_id: str, element_types: Optional[List[str]] = None,
                       rule_set: Optional[str] = None,
                       confidence_threshold: Optional[float] = None) -> Dict[str, Any]:
-    """识别轴网、柱、墙、梁，输出带证据与置信度的构件IR与疑点清单。"""
+    """识别轴网、柱、墙、梁，输出带证据与置信度的构件IR、疑点清单与构件关系图。"""
     try:
         data = get_pipeline().detect(task_id, element_types, rule_set, confidence_threshold)
         return response("ok", data, data.get("warnings", []), None, f"trace-{task_id}")
@@ -50,10 +50,22 @@ def detect_components(task_id: str, element_types: Optional[List[str]] = None,
 @mcp.tool(name="resolve_ambiguities")
 def resolve_ambiguities(task_id: str, decisions: List[Dict[str, Any]],
                         apply_to_similar: bool = False) -> Dict[str, Any]:
-    """对低置信度构件执行采纳、修正或排除，并记录裁决依据。"""
+    """对低置信度或拓扑异常构件执行采纳、修正或排除，并记录裁决依据。"""
     try:
         data = get_pipeline().resolve(task_id, decisions, apply_to_similar)
         return response("ok", data, data.get("warnings", []), None, f"trace-{task_id}")
+    except AppError as exc:
+        return _fail(exc, f"trace-{task_id}")
+
+
+@mcp.tool(name="query_graph")
+def query_graph(task_id: str, element_id: Optional[str] = None,
+                relation_types: Optional[List[str]] = None,
+                depth: int = 1) -> Dict[str, Any]:
+    """按构件、关系类型和邻域深度查询构件关系图，返回节点、关系、异常与可读摘要。"""
+    try:
+        data = get_pipeline().query_graph(task_id, element_id, relation_types, depth)
+        return response("ok", data, [], None, f"trace-{task_id}")
     except AppError as exc:
         return _fail(exc, f"trace-{task_id}")
 
@@ -86,7 +98,7 @@ def run_revit_script(task_id: str, dry_run: bool = False, resume: bool = True,
 @mcp.tool(name="check_model")
 def check_model(task_id: str, tolerance_mm: float = 50.0,
                 checks: Optional[List[str]] = None) -> Dict[str, Any]:
-    """模型与原图比对，输出漏识别、错位、参数缺失与重复构件。"""
+    """模型与原图比对，输出漏识别、错位、参数缺失、重复构件与拓扑异常。"""
     try:
         data = get_pipeline().check(task_id, tolerance_mm, checks)
         return response("ok", data, [], None, f"trace-{task_id}")
@@ -96,7 +108,7 @@ def check_model(task_id: str, tolerance_mm: float = 50.0,
 
 @mcp.tool(name="export_report")
 def export_report(task_id: str, template: str = "default", format: str = "markdown") -> Dict[str, Any]:
-    """导出建模报告，含体检结论、自动完成比例、疑点裁决、失败明细与待复核清单。"""
+    """导出建模报告，含体检结论、自动完成比例、图关系与拓扑、失败明细与待复核清单。"""
     try:
         data = get_pipeline().report(task_id, template, format)
         return response("ok", data, data.get("warnings", []), None, f"trace-{task_id}")
@@ -109,5 +121,5 @@ def run_stdio() -> None:
 
 
 def list_tool_names() -> List[str]:
-    return ["parse_dwg", "detect_components", "resolve_ambiguities",
+    return ["parse_dwg", "detect_components", "resolve_ambiguities", "query_graph",
             "generate_revit_script", "run_revit_script", "check_model", "export_report"]

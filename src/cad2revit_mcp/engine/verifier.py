@@ -20,13 +20,13 @@ def _position_of(element: Element):
 
 def verify(ir: IRDocument, execution: Dict[str, Any], tolerance_mm: float = 50.0,
            checks: List[str] | None = None) -> Dict[str, Any]:
-    enabled = checks or ["missing", "offset", "param", "duplicate"]
+    enabled = checks or ["missing", "offset", "param", "duplicate", "topology"]
     created = execution.get("created", [])
     created_ids = [item["element_id"] for item in created]
     created_set = set(created_ids)
 
     result: Dict[str, List[Dict[str, Any]]] = {
-        "missing": [], "offset": [], "param": [], "duplicate": [],
+        "missing": [], "offset": [], "param": [], "duplicate": [], "topology": [],
     }
 
     if "missing" in enabled:
@@ -71,6 +71,20 @@ def verify(ir: IRDocument, execution: Dict[str, Any], tolerance_mm: float = 50.0
                     "deviation_mm": round(deviation, 1),
                 })
 
+    if "topology" in enabled:
+        graph = ir.graph or {}
+        created_by_id = {item["element_id"]: item for item in created}
+        for issue in graph.get("issues", []):
+            element_id = issue.get("element_id")
+            landed = element_id in created_by_id
+            result["topology"].append({
+                "element_id": element_id,
+                "kind": issue.get("kind"),
+                "reason": (issue.get("detail") or {}).get("reason", ""),
+                "created": landed,
+                "position": created_by_id.get(element_id, {}).get("position"),
+            })
+
     total = len(ir.elements)
     problem_count = sum(len(v) for v in result.values())
     metrics = {
@@ -83,5 +97,6 @@ def verify(ir: IRDocument, execution: Dict[str, Any], tolerance_mm: float = 50.0
         "offset": len(result["offset"]),
         "param": len(result["param"]),
         "duplicate": len(result["duplicate"]),
+        "topology": len(result["topology"]),
     }
     return {"checks": result, "metrics": metrics}
