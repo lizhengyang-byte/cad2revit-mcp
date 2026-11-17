@@ -67,6 +67,8 @@ namespace Cad2RevitBridge
                     return CreateWall(document, instruction);
                 case "create_beam":
                     return CreateBeam(document, instruction);
+                case "create_level":
+                    return CreateLevel(document, instruction);
                 default:
                     return Fail(instruction, "E-4003", $"未知指令 {instruction.Op}");
             }
@@ -74,7 +76,8 @@ namespace Cad2RevitBridge
 
         private ExecutionResult CreateGrid(Document document, Instruction instruction)
         {
-            var level = FindLevel(document, instruction.Level, instruction.ElevationMm);
+            var level = FindLevel(document, instruction.Level);
+            if (level == null) return LevelMissing(instruction);
             var line = Line.CreateBound(ToXyz(instruction.Geometry.Start, level.Elevation),
                                         ToXyz(instruction.Geometry.End, level.Elevation));
             var grid = Grid.Create(document, line);
@@ -86,7 +89,8 @@ namespace Cad2RevitBridge
 
         private ExecutionResult CreateColumn(Document document, Instruction instruction)
         {
-            var level = FindLevel(document, instruction.Level, instruction.ElevationMm);
+            var level = FindLevel(document, instruction.Level);
+            if (level == null) return LevelMissing(instruction);
             var symbol = FindSymbol(document, instruction.Family, instruction.Type);
             if (symbol == null) return Fail(instruction, "E-3001", "柱族类型未载入");
 
@@ -98,7 +102,8 @@ namespace Cad2RevitBridge
 
         private ExecutionResult CreateWall(Document document, Instruction instruction)
         {
-            var level = FindLevel(document, instruction.Level, instruction.ElevationMm);
+            var level = FindLevel(document, instruction.Level);
+            if (level == null) return LevelMissing(instruction);
             var symbol = FindSymbol(document, instruction.Family, instruction.Type);
             if (symbol == null) return Fail(instruction, "E-3001", "墙类型未载入");
 
@@ -114,7 +119,8 @@ namespace Cad2RevitBridge
 
         private ExecutionResult CreateBeam(Document document, Instruction instruction)
         {
-            var level = FindLevel(document, instruction.Level, instruction.ElevationMm);
+            var level = FindLevel(document, instruction.Level);
+            if (level == null) return LevelMissing(instruction);
             var symbol = FindSymbol(document, instruction.Family, instruction.Type);
             if (symbol == null) return Fail(instruction, "E-3001", "梁族类型未载入");
 
@@ -126,12 +132,33 @@ namespace Cad2RevitBridge
             return Success(instruction, beam.Id);
         }
 
-        private static Level FindLevel(Document document, string name, double elevationMm)
+        // Storey identity is exact: a missing level must fail loudly. The old
+        // "closest elevation" fallback silently built a floor at the wrong
+        // height whenever the drawing said "4F" but the model had no 4F.
+        private static Level FindLevel(Document document, string name)
         {
-            var levels = new FilteredElementCollector(document).OfClass(typeof(Level)).Cast<Level>();
-            var match = levels.FirstOrDefault(l => l.Name == name);
-            if (match != null) return match;
-            return levels.OrderBy(l => Math.Abs(l.Elevation - MmToFeet(elevationMm))).First();
+            return new FilteredElementCollector(document)
+                .OfClass(typeof(Level)).Cast<Level>()
+                .FirstOrDefault(l => l.Name == name);
+        }
+
+        private static ExecutionResult LevelMissing(Instruction instruction)
+        {
+            return Fail(instruction, "E-3002",
+                $"标高 {instruction.Level} 不存在，请先执行 create_level 或核对 level_map");
+        }
+
+        /// <summary>
+        /// 按图纸标高新建标高；同名已存在时直接复用，避免重复提交时抛出。
+        /// 高程来自指令的 ElevationMm，单位换算在 MmToFeet 完成。
+        /// </summary>
+        private ExecutionResult CreateLevel(Document document, Instruction instruction)
+        {
+            var existing = FindLevel(document, instruction.Level);
+            if (existing != null) return Success(instruction, existing.Id);
+            var level = Level.Create(document, MmToFeet(instruction.ElevationMm));
+            level.Name = instruction.Level;
+            return Success(instruction, level.Id);
         }
 
         private static FamilySymbol FindSymbol(Document document, string family, string type)
