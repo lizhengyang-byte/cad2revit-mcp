@@ -25,11 +25,12 @@ def _fail(exc: AppError, trace_id: str = "") -> Dict[str, Any]:
 
 
 @mcp.tool(name="parse_dwg")
-def parse_dwg(file_path: str, discipline: str = "structure", level_name: str = "",
-              convert_dwg: bool = True) -> Dict[str, Any]:
-    """解析DXF/DWG图纸并做可用性体检，返回图层、文字、图框与健康结论。"""
+def parse_dwg(file_path: str = "", discipline: str = "structure", level_name: str = "",
+              convert_dwg: bool = True,
+              file_paths: Optional[List[str]] = None) -> Dict[str, Any]:
+    """解析一张或多张DXF/DWG图纸：自动切分平面区域、识别楼层，返回区域清单与体检结论。"""
     try:
-        data = get_pipeline().parse(file_path, discipline, level_name, convert_dwg)
+        data = get_pipeline().parse(file_path, discipline, level_name, convert_dwg, file_paths)
         return response("ok", data, [], None, f"trace-{data['task_id']}")
     except AppError as exc:
         return _fail(exc)
@@ -39,7 +40,7 @@ def parse_dwg(file_path: str, discipline: str = "structure", level_name: str = "
 def detect_components(task_id: str, element_types: Optional[List[str]] = None,
                       rule_set: Optional[str] = None,
                       confidence_threshold: Optional[float] = None) -> Dict[str, Any]:
-    """识别轴网、柱、墙、梁，输出带证据与置信度的构件IR、疑点清单与构件关系图。"""
+    """按楼层识别轴网、柱、墙、梁，输出带证据与置信度的构件IR、疑点清单与构件关系图。"""
     try:
         data = get_pipeline().detect(task_id, element_types, rule_set, confidence_threshold)
         return response("ok", data, data.get("warnings", []), None, f"trace-{task_id}")
@@ -61,10 +62,10 @@ def resolve_ambiguities(task_id: str, decisions: List[Dict[str, Any]],
 @mcp.tool(name="query_graph")
 def query_graph(task_id: str, element_id: Optional[str] = None,
                 relation_types: Optional[List[str]] = None,
-                depth: int = 1) -> Dict[str, Any]:
-    """按构件、关系类型和邻域深度查询构件关系图，返回节点、关系、异常与可读摘要。"""
+                depth: int = 1, floor: Optional[str] = None) -> Dict[str, Any]:
+    """按构件、关系类型、邻域深度与楼层查询构件关系图，返回节点、关系、异常与可读摘要。"""
     try:
-        data = get_pipeline().query_graph(task_id, element_id, relation_types, depth)
+        data = get_pipeline().query_graph(task_id, element_id, relation_types, depth, floor)
         return response("ok", data, [], None, f"trace-{task_id}")
     except AppError as exc:
         return _fail(exc, f"trace-{task_id}")

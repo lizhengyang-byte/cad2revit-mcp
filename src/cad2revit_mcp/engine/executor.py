@@ -110,6 +110,7 @@ class Executor:
                         "revit_id": result.get("revit_id", ""),
                         "op": instruction["op"],
                         "level": instruction.get("level"),
+                        "floor": instruction.get("floor"),
                         "position": result.get("position"),
                     })
                     key_pairs.append((key, instruction["element_id"]))
